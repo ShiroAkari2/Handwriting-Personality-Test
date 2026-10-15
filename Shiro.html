@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handwriting Personality test - ShiroAkari Project</title>
+<style>
+  :root {
+    --bg: #faf7f2; --card: #ffffff; --text: #2b2622; --muted: #7a7068;
+    --line: #e6ded3; --accent: #c4572b; --accent-soft: #f6e3da; --accent-2: #3b6e8f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1917; --card: #26221f; --text: #f1ebe4; --muted: #a39a90;
+      --line: #3a342f; --accent: #e8794c; --accent-soft: #3b2a22; --accent-2: #6fb0d6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  main {
+    width: 100%; max-width: 600px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; padding: 24px;
+  }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 14px; }
+  header .title { font-size: 1.35rem; font-weight: 700; margin: 0; }
+  header .by { color: var(--muted); font-size: .9rem; margin: 2px 0 0; }
+  h1 { font-size: 1.5rem; margin: 4px 0 6px; }
+  h2 { font-size: 1.2rem; margin: 16px 0; line-height: 1.35; }
+  p { line-height: 1.6; margin: 0 0 12px; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .progress { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+  .progress > div { height: 100%; background: var(--accent); transition: width .25s; }
+  .options { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .opt {
+    width: 100%; display: flex; align-items: center; gap: 14px; text-align: left;
+    background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 12px; padding: 8px 14px; font: inherit; cursor: pointer;
+  }
+  .opt:hover, .opt:focus-visible { border-color: var(--accent); outline: none; background: var(--accent-soft); }
+  .opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .glyph { flex: 0 0 52px; display: flex; justify-content: center; }
+  .glyph svg { width: 44px; height: 58px; fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .btn {
+    font: inherit; padding: 10px 16px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .tag { display: inline-block; background: var(--accent-soft); color: var(--accent); border-radius: 99px; padding: 2px 10px; font-size: .8rem; margin-bottom: 4px; }
+  .code { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; color: var(--accent); font-weight: 700; font-size: 1.1rem; }
+  .tagline { color: var(--muted); font-style: italic; margin-bottom: 12px; }
+  .axis { margin: 14px 0; }
+  .axis .label { display: flex; justify-content: space-between; font-size: .9rem; margin-bottom: 4px; }
+  .axis .label .win { font-weight: 700; color: var(--accent); }
+  .axis .track { height: 10px; background: var(--accent-2); border-radius: 99px; overflow: hidden; opacity: .9; }
+  .axis .fill { height: 100%; background: var(--accent); }
+  .note { background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; font-size: .9rem; margin: 12px 0; }
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite"></main>
+
+<script>
+// ============ Helper menggambar (viewBox 0 0 60 80, garis dasar y=70) ============
+const E = (cx, cy, rx, ry) =>
+  `M${cx - rx} ${cy} A${rx} ${ry} 0 1 1 ${cx + rx} ${cy} A${rx} ${ry} 0 1 1 ${cx - rx} ${cy} Z`;
+const S_CURVE = "M44 22 C40 8 14 10 16 28 C18 44 46 42 46 58 C46 74 16 76 12 60";
+
+// ============ Sumbu kepribadian ============
+// Kode tiap pilihan = 4 huruf, urutan sumbu: [I/E][P/F][K/R][T/H]
+const AXES = [
+  { a: "I", an: "Introvert",    b: "E", bn: "Ekstrovert" },
+  { a: "P", an: "Perfeksionis", b: "F", bn: "Fleksibel"  },
+  { a: "K", an: "Kreatif",      b: "R", bn: "Realistis"  },
+  { a: "T", an: "Tegas",        b: "H", bn: "Harmonis"   }
+];
+
+const BLURB = {
+  I: "Kamu cenderung tenang dan paling nyaman dengan ruang sendiri; energimu terisi saat menyendiri.",
+  E: "Kamu mudah bergaul dan terisi energinya saat bersama orang lain; kehadiranmu terasa di mana pun.",
+  P: "Kamu menjunjung standar tinggi: rapi, terstruktur, dan sulit puas sebelum sesuatu terasa pas (kecenderungan perfeksionis).",
+  F: "Kamu luwes dan mudah beradaptasi; rencana boleh berubah selama hasilnya tetap jalan.",
+  K: "Kamu punya imajinasi dan gaya sendiri, serta senang mencoba hal yang tidak biasa.",
+  R: "Kamu membumi dan praktis, lebih suka cara yang sudah terbukti berhasil.",
+  T: "Kamu tegas dan lugas; berani mengambil keputusan dan menyampaikan pendapat.",
+  H: "Kamu mengutamakan keharmonisan dan peka terhadap perasaan orang di sekitarmu."
+};
+
+// 16 tipe: kunci = huruf pemenang tiap sumbu
+const TYPES = {
+  IPKT: ["Arsitek Perfeksionis", "Merancang dunia dalam kepala, lalu membangunnya sampai sempurna."],
+  IPKH: ["Seniman Teliti", "Karya halus yang dikerjakan dengan sabar dan hati yang lembut."],
+  IPRT: ["Penjaga Standar", "Tertib, konsisten, dan tidak mau kompromi soal kualitas."],
+  IPRH: ["Pelindung Setia", "Diam-diam memastikan semuanya beres demi orang-orang tersayang."],
+  IFKT: ["Pemikir Mandiri", "Berjalan di jalur sendiri dengan ide yang tajam."],
+  IFKH: ["Pemimpi Lembut", "Dunia batinnya kaya, dan ia menjalaninya dengan santai."],
+  IFRT: ["Pengamat Pragmatis", "Sedikit bicara, tapi kalau bicara selalu tepat sasaran."],
+  IFRH: ["Penenang Tenang", "Hadir tanpa banyak suara, dan suasana jadi lebih adem."],
+  EPKT: ["Komandan Perfeksionis", "Visi besar, standar tinggi, dan tim yang digerakkan dengan jelas."],
+  EPKH: ["Pemandu Inspiratif", "Menata ide indah dan mengajak semua orang ikut maju."],
+  EPRT: ["Manajer Andal", "Rencana rapi, eksekusi tegas, hasil dapat diandalkan."],
+  EPRH: ["Penyelenggara Hangat", "Acara berjalan mulus dan semua orang merasa diperhatikan."],
+  EFKT: ["Pendobrak Berani", "Mencoba cara baru lebih dulu dan tidak takut berbeda."],
+  EFKH: ["Penghibur Bebas", "Spontan, ekspresif, dan membuat suasana hidup."],
+  EFRT: ["Pelaku Gesit", "Cepat bertindak, praktis, dan langsung ke hasil."],
+  EFRH: ["Teman Semua Orang", "Ramah, santai, dan mudah akrab dengan siapa saja."]
+};
+
+// ============ Pertanyaan: [deskripsi, kode 4 huruf, path gambar] ============
+const Q = [
+  { q: "Bagaimana kamu menulis angka 0?", o: [
+    ["Bulat besar dan penuh", "EPRH", E(30, 40, 22, 30)],
+    ["Lonjong sempit dan tinggi", "IPRT", E(30, 40, 12, 31)],
+    ["Dicoret miring di tengah", "EPKT", E(30, 40, 18, 30) + " M18 58 L42 22"],
+    ["Ada titik di tengahnya", "IPKH", E(30, 40, 18, 30) + " M30 40 L30.1 40"],
+    ["Tidak tertutup, ujungnya tidak bertemu", "EFRH", "M34 12 C10 6 6 70 30 70 C54 70 52 16 32 14"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 1?", o: [
+    ["Satu garis lurus saja", "IFRT", "M32 10 L32 70"],
+    ["Ada topi kecil di atas", "IPRT", "M20 22 L32 10 L32 70"],
+    ["Ada topi dan garis alas", "EPRT", "M20 22 L32 10 L32 70 M16 70 L48 70"],
+    ["Miring ke kanan seperti tulisan sambung", "EFRH", "M20 70 L38 10"],
+    ["Lengkung melayang dengan topi panjang", "EFKH", "M10 30 C26 26 32 18 36 10 C32 30 30 50 30 70"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 2?", o: [
+    ["Lengkung di atas, alas lurus", "IPRT", "M14 24 C14 6 46 6 46 26 C46 42 22 56 14 70 L48 70"],
+    ["Mengalir tanpa alas yang tegas, ujung melengkung", "EFRH", "M14 24 C14 6 46 6 46 26 C46 44 22 56 14 70 C26 66 40 70 48 66"],
+    ["Ada simpul kecil di dasar", "EFKH", "M14 24 C14 6 46 6 46 26 C46 42 22 56 14 70 L42 70 C54 70 54 58 44 60"],
+    ["Bersudut seperti huruf Z", "EPKT", "M14 14 L46 14 L16 70 L48 70"],
+    ["Kecil dan rapat", "IPRH", "M24 36 C24 26 38 26 38 38 C38 46 26 52 24 60 L40 60"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 3?", o: [
+    ["Dua lengkung bulat", "EFRH", "M14 20 C20 6 46 8 44 24 C42 36 28 38 26 38 C46 38 48 52 44 60 C38 76 16 72 12 60"],
+    ["Bagian atas rata seperti huruf Z", "EPRT", "M14 12 L46 12 L28 36 C48 34 52 58 40 66 C32 72 18 70 12 62"],
+    ["Besar dan lebar", "EFRH", "M8 20 C14 2 54 4 52 24 C50 40 30 40 28 40 C54 40 58 58 50 66 C42 78 14 76 8 62"],
+    ["Ekor di bawah menjulur melengkung", "EFKH", "M14 20 C20 6 46 8 44 24 C42 36 28 38 26 38 C46 38 48 56 38 64 C30 70 18 66 10 74"],
+    ["Kecil dan hati-hati", "IPRH", "M22 32 C26 24 40 26 38 34 C37 40 30 42 29 42 C40 42 42 50 38 54 C34 60 24 58 21 54"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 4?", o: [
+    ["Tertutup, ada segitiga di atas", "IPRT", "M38 10 L10 50 L50 50 M38 10 L38 70"],
+    ["Terbuka, dua garis terpisah", "IFRT", "M12 10 L12 44 L46 44 M38 10 L38 70"],
+    ["Garis datar menjulur panjang", "EFRT", "M38 10 L8 50 L58 50 M38 10 L38 70"],
+    ["Satu goresan tanpa angkat pena", "EFKT", "M38 70 L38 10 L10 50 L52 50"],
+    ["Bagian atas bulat melengkung", "EFKH", "M12 10 C12 30 18 46 30 46 C40 46 46 42 48 40 M44 10 L44 70"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 5?", o: [
+    ["Garis atas lurus, perut membulat", "IPRH", "M46 12 L18 12 L16 36 C30 28 52 36 50 54 C48 70 22 76 10 62"],
+    ["Garis atas panjang menjulur ke kanan", "EPRT", "M58 12 L18 12 L16 36 C30 28 52 36 50 54 C48 70 22 76 10 62"],
+    ["Perut sangat bulat dan besar", "EFRH", "M42 12 L20 12 L18 34 C24 30 36 28 46 32 C60 40 56 66 36 70 C22 72 12 66 8 60"],
+    ["Tanpa garis atas, mengalir seperti huruf S", "EFKH", "M44 14 C20 6 12 30 30 36 C56 42 46 72 12 62"],
+    ["Kecil dan rapat", "IPRT", "M38 28 L24 28 L22 44 C30 40 42 44 40 54 C38 64 24 66 18 60"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 6?", o: [
+    ["Lengkung besar yang santai", "EFRH", "M44 12 C20 18 10 50 14 60 C20 78 50 72 48 54 C46 40 24 40 16 54"],
+    ["Ada loop kecil di atas", "EFKH", "M42 16 C30 2 20 14 32 20 C12 34 10 56 16 64 C24 76 50 70 48 54 C46 40 24 42 16 56"],
+    ["Bersudut, tegak, dan kaku", "IPRT", "M38 10 L16 50 L16 70 L46 70 L46 46 L16 46"],
+    ["Tangkai lurus dengan perut bulat", "IPRH", "M36 10 L18 50 C10 70 50 78 48 54 C46 40 22 40 18 50"],
+    ["Ekor tinggi melengkung ke kanan", "EFKT", "M48 14 C30 8 14 30 14 54 C14 78 50 76 48 54 C46 40 24 40 14 54"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 7?", o: [
+    ["Polos tanpa coretan", "IFRT", "M12 12 L48 12 L26 70"],
+    ["Dicoret di bagian tengah", "IPRT", "M12 12 L48 12 L26 70 M18 42 L40 42"],
+    ["Garis atas panjang dengan kait di ujung", "EPKT", "M8 12 L52 12 L26 70 M8 12 L8 24"],
+    ["Melengkung di bagian atas", "EFKH", "M12 22 C14 6 40 8 48 12 C40 36 32 52 26 70"],
+    ["Dengan garis alas", "IPRT", "M12 12 L48 12 L26 70 M16 70 L36 70"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 8?", o: [
+    ["Dua lingkaran bertumpuk", "IPRH", E(30, 24, 13, 13) + " " + E(30, 53, 17, 17)],
+    ["Satu goresan seperti huruf S yang ditutup", "EFRH", "M30 38 C10 32 14 10 30 10 C46 10 48 30 30 38 C10 46 10 70 30 70 C50 70 52 46 30 38"],
+    ["Miring dengan lekukan unik", "EFKH", "M30 38 C12 22 22 6 34 10 C46 14 46 28 30 38 C14 48 14 66 28 70 C42 72 50 56 30 38"],
+    ["Lingkaran bawah jauh lebih besar", "EPRH", E(29, 22, 9, 9) + " " + E(30, 52, 22, 18)],
+    ["Bersudut seperti dua kotak", "IPRT", "M16 10 L44 10 L44 38 L16 38 Z M12 38 L48 38 L48 70 L12 70 Z"]
+  ]},
+  { q: "Bagaimana kamu menulis angka 9?", o: [
+    ["Lingkaran dengan ekor lurus", "IPRT", E(30, 26, 14, 14) + " M44 26 L44 70"],
+    ["Ekor melengkung ke kiri", "EFKH", E(30, 26, 14, 14) + " M44 26 C44 54 40 70 18 68"],
+    ["Lingkaran terbuka dengan ekor lurus", "IFRT", "M42 14 C20 2 10 30 28 36 C38 40 44 32 44 26 L44 70"],
+    ["Lingkaran besar dengan ekor pendek", "EPRH", E(28, 28, 20, 20) + " M48 28 L48 50"],
+    ["Bagian atas bersudut seperti kotak", "IPKT", "M16 12 L44 12 L44 36 L16 36 Z M44 12 L44 70"]
+  ]},
+  { q: "Bagaimana kamu menulis huruf x kecil?", o: [
+    ["Dua garis lurus bersilangan", "IPRT", "M16 30 L44 70 M44 30 L16 70"],
+    ["Dua garis agak melengkung", "EFKH", "M16 30 C26 42 34 58 44 70 M44 30 C34 42 26 58 16 70"],
+    ["Ada ekor menjulur ke kanan", "EFKT", "M16 30 L44 70 M44 30 L16 70 C30 74 44 74 56 70"],
+    ["Kecil dan tipis", "IPRT", "M24 42 L38 62 M38 42 L24 62"],
+    ["Besar dan tinggi seperti huruf X kapital", "EPRT", "M12 10 L48 70 M48 10 L12 70"]
+  ]},
+  { q: "Bagaimana kamu menulis tanda kali?", o: [
+    ["Silang kecil (×)", "IPRT", "M20 36 L40 56 M40 36 L20 56"],
+    ["Titik di tengah (·)", "IFRH", E(30, 46, 3, 3)],
+    ["Bintang (*)", "EFKT", "M30 28 L30 64 M14 37 L46 55 M46 37 L14 55"],
+    ["Huruf x biasa", "EFRT", "M14 30 L46 70 M46 30 L14 70"],
+    ["Silang di dalam lingkaran", "EPKH", E(30, 46, 22, 22) + " M20 36 L40 56 M40 36 L20 56"]
+  ]},
+  { q: "Bagaimana kamu menulis π (pi)?", o: [
+    ["Atap lurus dengan dua kaki", "IPRT", "M10 30 L50 30 M22 30 L22 70 M38 30 L38 70"],
+    ["Atap melengkung", "EFKH", "M10 36 C16 24 44 24 50 34 M24 30 L22 70 M38 30 L40 70"],
+    ["Dua kaki berkait ke luar", "EFKH", "M10 30 L50 30 M22 30 L22 64 C22 72 14 72 14 66 M38 30 L38 64 C38 72 46 72 46 66"],
+    ["Atap panjang dengan ekor menjulur", "EFRT", "M4 34 C20 28 44 28 56 24 M20 32 L20 70 M38 30 L38 70"],
+    ["Kaki kiri lurus, kaki kanan melengkung", "IFRH", "M10 30 L50 30 M22 30 L22 70 M22 44 C22 36 40 36 40 46 L40 70"]
+  ]},
+  { q: "Bagaimana kamu menulis huruf a kecil?", o: [
+    ["Bulat dengan tiang di samping", "IPRH", E(30, 52, 14, 14) + " M44 34 L44 70"],
+    ["Ada topi di atas (gaya cetak)", "IPRT", "M18 36 C28 28 44 30 44 42 L44 70 M44 52 C30 46 14 52 16 62 C18 72 38 72 44 62"],
+    ["Melingkar gaya sambung", "EFKH", "M44 36 C30 28 12 40 16 60 C20 74 40 72 44 56 L44 36 L44 66 C46 70 50 70 54 66"],
+    ["Besar dan melebar", "EPRH", E(28, 52, 18, 18) + " M46 30 L46 70"],
+    ["Bersudut seperti huruf A kapital", "EPKT", "M12 70 L28 34 L44 70 M18 56 L38 56"]
+  ]},
+  { q: "Bagaimana kamu menulis huruf g kecil?", o: [
+    ["Ekor berloop yang kembali menyilang", "EPKH", E(30, 50, 14, 14) + " M44 38 L44 66 C44 78 18 80 20 68 C22 60 36 62 44 66"],
+    ["Seperti angka 9, ekor lurus", "IPRH", E(30, 50, 14, 14) + " M44 50 L44 74"],
+    ["Ekor terbuka melengkung ke kiri", "EFRH", E(30, 50, 14, 14) + " M44 38 L44 70 C44 80 22 80 16 72"],
+    ["Bulat besar dengan ekor panjang", "EFKT", E(28, 48, 18, 14) + " M46 36 L46 76 C46 82 26 82 20 76"],
+    ["Kecil dan rapat", "IPRH", E(30, 46, 8, 8) + " M38 46 L38 62 C38 68 28 68 24 64"]
+  ]},
+  { q: "Bagaimana kamu menulis huruf G kapital?", o: [
+    ["Bulat seperti C dengan garis masuk", "IPRH", "M46 22 C36 6 12 12 12 40 C12 68 40 74 48 54 L48 44 L32 44"],
+    ["Bersudut dengan tiang tegak", "IPRT", "M46 12 L14 12 L14 68 L46 68 L46 42 L30 42"],
+    ["Bulat dengan ekor menjulur", "EFKH", "M46 22 C36 6 12 12 12 40 C12 68 44 74 48 52 C50 40 34 44 28 44 C40 44 44 58 56 56"],
+    ["Besar dan melebar", "EFRH", "M52 18 C40 2 6 8 6 40 C6 72 46 76 54 52 L54 42 L34 42"],
+    ["Tanpa garis masuk, tiang pendek", "IFRT", "M44 20 C34 8 14 12 14 40 C14 68 38 72 46 58 L46 48"]
+  ]},
+  { q: "Bagaimana kamu menulis tanda dolar ($)?", o: [
+    ["Huruf S dengan satu garis tembus", "IPRT", S_CURVE + " M30 4 L30 76"],
+    ["Huruf S dengan dua garis tembus", "EPRT", S_CURVE + " M24 4 L24 76 M36 4 L36 76"],
+    ["Huruf S dengan hiasan lengkung", "EFKH", S_CURVE + " M30 6 L30 74 M30 6 C40 0 50 8 44 12"],
+    ["Hanya huruf S tanpa garis", "IFRH", S_CURVE],
+    ["Garis pendek hanya di atas dan bawah", "EPKH", S_CURVE + " M30 6 L30 16 M30 64 L30 74"]
+  ]},
+  { q: "Bagaimana kamu menulis tanda & (dan)?", o: [
+    ["Bentuk klasik yang lengkap", "IPRH", "M48 66 C36 78 10 72 16 54 C22 42 42 34 36 20 C32 8 14 12 18 26 C20 34 34 52 48 70"],
+    ["Seperti angka 8 miring dengan ekor", "EFRH", "M20 70 C6 60 18 46 30 40 C42 34 42 12 30 12 C18 12 18 30 32 44 C42 54 50 62 50 70"],
+    ["Seperti huruf E terbalik (ε)", "EFKH", "M44 18 C28 14 14 24 28 38 C14 40 8 58 20 66 C30 72 44 68 50 60"],
+    ["Seperti huruf t dengan ekor", "EFRT", "M30 10 L30 70 M14 30 L46 30 M30 70 C40 74 46 70 52 64"],
+    ["Zig-zag bersudut", "EPKT", "M44 70 L14 30 L32 12 L44 28 L14 62 L22 70 L48 54"]
+  ]}
+];
+
+// ============ Logika ============
+const app = document.getElementById("app");
+const NS = "http://www.w3.org/2000/svg";
+let step = 0;
+let answers = new Array(Q.length).fill(null);
+
+function el(tag, props, children) {
+  const n = document.createElement(tag);
+  Object.assign(n, props || {});
+  (children || []).forEach(c => n.append(c));
+  return n;
+}
+
+function glyph(d) {
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 60 80");
+  svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", d);
+  svg.append(p);
+  return el("span", { className: "glyph" }, [svg]);
+}
+
+function header() {
+  return el("header", {}, [
+    el("p", { className: "title", textContent: "Handwriting Personality test" }),
+    el("p", { className: "by", textContent: "By ShiroAkari Project" })
+  ]);
+}
+
+function renderQuestion() {
+  const item = Q[step];
+  app.replaceChildren(
+    header(),
+    el("div", { className: "muted", textContent: "Pertanyaan " + (step + 1) + " dari " + Q.length }),
+    el("div", { className: "progress" }, [
+      Object.assign(el("div"), { style: "width:" + (step / Q.length * 100) + "%" })
+    ]),
+    el("h2", { textContent: item.q }),
+    el("ul", { className: "options" }, item.o.map((opt, idx) => {
+      const btn = el("button", {
+        className: "opt" + (answers[step] === idx ? " sel" : ""),
+        type: "button"
+      }, [glyph(opt[2]), el("span", { textContent: opt[0] })]);
+      btn.addEventListener("click", () => { answers[step] = idx; step++; render(); });
+      return el("li", {}, [btn]);
+    })),
+    (() => {
+      const back = el("button", { className: "btn", type: "button", textContent: "Kembali", disabled: step === 0 });
+      back.addEventListener("click", () => { step--; render(); });
+      return el("div", { className: "row" }, [back]);
+    })()
+  );
+}
+
+function computeScores() {
+  const s = {};
+  AXES.forEach(ax => { s[ax.a] = 0; s[ax.b] = 0; });
+  answers.forEach((a, i) => {
+    if (a === null) return;
+    Q[i].o[a][1].split("").forEach(ch => { s[ch]++; });
+  });
+  return s;
+}
+
+function renderResult() {
+  const s = computeScores();
+  let code = "";
+  const axisViews = AXES.map(ax => {
+    const total = (s[ax.a] + s[ax.b]) || 1;
+    const pctA = Math.round(s[ax.a] / total * 100);
+    const winA = s[ax.a] >= s[ax.b];
+    code += winA ? ax.a : ax.b;
+    return { ax, pctA, winA };
+  });
+
+  const type = TYPES[code];
+  const desc = code.split("").map(ch => BLURB[ch]).join(" ");
+  const perfPct = axisViews[1].pctA;
+
+  const bars = axisViews.map(v => el("div", { className: "axis" }, [
+    el("div", { className: "label" }, [
+      el("span", { className: v.winA ? "win" : "", textContent: v.ax.an + " " + v.pctA + "%" }),
+      el("span", { className: v.winA ? "" : "win", textContent: v.ax.bn + " " + (100 - v.pctA) + "%" })
+    ]),
+    el("div", { className: "track" }, [
+      Object.assign(el("div", { className: "fill" }), { style: "width:" + v.pctA + "%" })
+    ])
+  ]));
+
+  const again = el("button", { className: "btn primary", type: "button", textContent: "Ulangi tes" });
+  again.addEventListener("click", () => { step = 0; answers = new Array(Q.length).fill(null); render(); });
+
+  const copy = el("button", { className: "btn", type: "button", textContent: "Salin hasil" });
+  copy.addEventListener("click", async () => {
+    const text = "Hasil Handwriting Personality test (ShiroAkari Project): " + code + " - " + type[0];
+    try { await navigator.clipboard.writeText(text); copy.textContent = "Tersalin!"; }
+    catch (e) { copy.textContent = "Gagal menyalin"; }
+  });
+
+  const children = [
+    header(),
+    el("span", { className: "tag", textContent: "Hasil kepribadianmu" }),
+    el("div", { className: "code", textContent: code }),
+    el("h1", { textContent: type[0] }),
+    el("p", { className: "tagline", textContent: type[1] }),
+    el("p", { textContent: desc }),
+    ...bars
+  ];
+  if (perfPct >= 70) {
+    children.push(el("div", { className: "note", textContent: "kecenderungan perfeksionisme("  + perfPct +  "%)." }));
+  }
+  children.push(
+    el("p", { className: "muted", textContent: "MAKASIH SUDAH MENCOBANYA TEMAN-TEMAN" }),
+    el("div", { className: "row" }, [again, copy])
+  );
+  app.replaceChildren(...children);
+}
+
+function render() {
+  if (step >= Q.length) renderResult(); else renderQuestion();
+}
+
+render();
+</script>
+</body>
+</html>
